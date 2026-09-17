@@ -1,0 +1,129 @@
+---
+title: "Troubleshooting"
+description: "Symptoms, causes, and fixes when telemetry or exemplars do not arrive."
+icon: "wrench"
+---
+
+<AccordionGroup>
+  <Accordion title="Nothing arrives at all">
+    **Cause.** The token or the service name is missing, the endpoint is wrong, or the endpoint rejects the token. A wrong endpoint is not detected at `start()`. The exports fail later.
+
+    **Fix.** Read the first lines of the process output. With no token, the SDK logs one line and stays off:
+
+    ```text
+    [otel] sherlock: no access token (SHERLOCK_ACCESS_TOKEN) — telemetry stays off
+    ```
+
+    A rejected token shows at the default log level. The line is a JSON error object whose message ends in `metrics export failed (error OTLPExporterError: Unauthorized)`. Compare the token with **Settings → Collector**. `OTEL_LOG_LEVEL=debug` shows every export attempt.
+  </Accordion>
+
+  <Accordion title="Traces arrive, metrics do not">
+    **Cause.** Something created an instrument with the OpenTelemetry metrics API before `start()`. The metrics API has no late binding. A meter created early is a permanent, silent no-op.
+
+    **Fix.** Define every instrument with `defineMeter` or `defineCounter`, `defineHistogram`, `defineGauge`. Never call `metrics.getMeter()` yourself.
+  </Accordion>
+
+  <Accordion title="HTTP spans arrive, framework and database spans do not, and http.server.request.duration has no http.route">
+    **Cause.** The app is an ES module and the SDK was registered with a line-1 import. Static imports are linked before any code runs, so the register entry arrives after Express, Postgres, Redis, and pino loaded. The `http` built-in still gets patched, which is why bare `GET` spans appear.
+
+    **Fix.** Register the loader hook with `--import`. Create `otel.mjs` with `register('@opentelemetry/instrumentation/hook.mjs', import.meta.url)` from `node:module` followed by `await import('@sherlock-labs/otel/register')`, and run `node --import ./otel.mjs index.js`, or set `NODE_OPTIONS="--import ./otel.mjs"`. See [End-to-end steps](/sdk/nodejs/add-telemetry#3-register-the-sdk-before-your-app-loads).
+  </Accordion>
+
+  <Accordion title="Some libraries are traced and others are not (CommonJS)">
+    **Cause.** The untraced libraries loaded before `require('@sherlock-labs/otel/register')`.
+
+    **Fix.** Make the register require the first line of the entrypoint. If you bundle, check the built output. A bundler can reorder requires.
+  </Accordion>
+
+  <Accordion title="The token comes from a file or a secret manager and nothing starts">
+    **Cause.** The auto-start runs only when `SHERLOCK_ACCESS_TOKEN` and `OTEL_SERVICE_NAME` are both in the environment.
+
+    **Fix.** Call `start({ accessToken })` after you load the token. `start()` always wins over the auto-start.
+  </Accordion>
+
+  <Accordion title="Exports fail behind a gateway that routes by Host header">
+    **Cause.** The gateway needs a `Host` header that names the ingest host.
+
+    **Fix.** Pass `exporter: { host: 'ingest-1.sherlocklabs.dev' }` to `start()`. The SDK sends over `node:http`, so the header survives. `fetch` and `undici` drop it.
+  </Accordion>
+
+  <Accordion title="The worker does not appear, or the last metrics of a deploy are missing">
+    **Cause.** Each process type needs its own `OTEL_SERVICE_NAME` and its own `stop()` call.
+
+    **Fix.** Set a distinct service name per process type. Call `await stop()` in the shutdown handler of every process type. `stop()` flushes the last metric interval and the pending span batch.
+  </Accordion>
+
+  <Accordion title="Histogram values look a thousand times too large">
+    **Cause.** The histogram records milliseconds into a seconds histogram, or a metric name ends in `_ms`.
+
+    **Fix.** Record durations in seconds. A histogram's unit defaults to `s`, and the default buckets are in seconds. Divide `performance.now()` differences by 1000.
+  </Accordion>
+
+  <Accordion title="Spans from my own code do not appear">
+    **Cause.** Two copies of `@opentelemetry/api` are in the process. Your spans go to a copy with no provider.
+
+    **Fix.** Import `trace`, `context`, `SpanKind`, and `SpanStatusCode` from `@sherlock-labs/otel`. Remove `@opentelemetry/api` from your dependencies.
+  </Accordion>
+
+  <Accordion title="Express request-handler spans never arrive">
+    **Cause.** `cls-rtracer` patches `res.removeListener` positionally. It removes the most recently registered wrapped listener for that event, whatever function you pass. The Express instrumentation calls `removeListener('close', ...)` once per layer that calls `next()`. Together they strip every `close` listener registered after `cls-rtracer`, and the Express instrumentation ends its spans from one.
+
+    **Fix.** Replace `cls-rtracer` with a plain `AsyncLocalStorage` middleware, or rely on the SDK's pino correlation instead. The `app.http.server.*` adapter metrics are not affected: the Express adapter records on `finish` or `close`, whichever fires first, and nothing removes `finish` listeners.
+  </Accordion>
+
+  <Accordion title="Exemplars are missing on the HTTP histograms">
+    **Cause.** The auto-instrumented HTTP histograms get exemplars only for sampled requests. An unsampled request has a non-recording span with no attributes, so the SDK cannot rebuild the metric's attribute set.
+
+    **Fix.** Check `tracing.sampleRatio` and `OTEL_TRACES_SAMPLER_ARG`. Your own histograms get exemplars at any sampling.
+  </Accordion>
+
+  <Accordion title="Exemplars are missing on a low-traffic service">
+    **Cause.** Reservoirs are per bucket per export interval and clear on export. An interval with no requests has no data points and no exemplars.
+
+    **Fix.** None needed. A service that serves a few requests per interval gets exemplars.
+  </Accordion>
+
+  <Accordion title="A drift warning appears in the logs">
+    **Cause.** An exemplar attaches to a data point by an exact match on metric name plus attributes. Exemplars for one metric matched no data point on two consecutive exports.
+
+    **Fix.** On a custom histogram this cannot happen, because one call feeds both. On the auto-instrumented HTTP histograms it means the installed http instrumentation does not match the SDK's pin. Check that no other package pulls in a different `@opentelemetry/instrumentation-http`.
+  </Accordion>
+
+  <Accordion title="An exemplar links to a trace that does not exist">
+    **Cause.** The request was not sampled, or traces were off. The exemplar's `trace_flags` is `00`.
+
+    **Fix.** Read `trace_flags` before you follow a trace link. The ids still match the request's log lines. Filter Logs by `trace_id`.
+  </Accordion>
+
+  <Accordion title="SDK diagnostics do not appear in my logs">
+    **Cause.** The SDK writes to the console by default.
+
+    **Fix.** Pass your pino logger as the `logger` option. The SDK formats each diagnostic into one string before it calls the logger, so pino prints the full message.
+  </Accordion>
+
+  <Accordion title="I want to test my metrics without Sherlock">
+    Start a local `node:http` server that stores `POST /v1/metrics` and `POST /v1/traces` bodies. Call `start()` with `endpoint` pointed at it and `instrumentations: []`, record, call `stop()`, and read the JSON. See [Custom metrics and exemplars](/sdk/nodejs/custom-metrics#test-your-metrics-with-a-local-sink).
+  </Accordion>
+</AccordionGroup>
+
+## Diagnostic levels
+
+| Level | What you see |
+|---|---|
+| `warn` (default) | Configuration problems, export failures, the drift warning, unknown instrumentation names, recording failures. |
+| `info` | Pipeline start and stop, and an explicit `start()` taking over the auto-start. |
+| `debug` | Every export attempt, and the HTTP hooks being dropped from a list with no http instrumentation. |
+
+Set `OTEL_LOG_LEVEL`, or pass a `logger` to `start()`. The complete option reference is the [SDK README](https://github.com/sherlock-labs-dev/sherlock-otel-js#readme).
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="End-to-end steps" icon="list-ol" href="/sdk/nodejs/add-telemetry">
+    The verify checklist is step 11.
+  </Card>
+
+  <Card title="SDK README" icon="book" href="https://github.com/sherlock-labs-dev/sherlock-otel-js#readme">
+    Every option and environment variable.
+  </Card>
+</CardGroup>

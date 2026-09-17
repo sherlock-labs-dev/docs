@@ -1,0 +1,52 @@
+---
+title: "From a chart to a trace to the logs"
+sidebarTitle: "Exemplars"
+description: "Follow an exemplar from a latency spike to the request that caused it and its log lines."
+icon: "link"
+---
+
+An exemplar is one sampled measurement attached to a histogram bucket. It carries the trace id and span id of the request that produced the measurement. That is the link from "p99 got worse at 14:20" to "here is one of the slow requests."
+
+## The pivot, step by step
+
+<Steps>
+  <Step title="Find the spike">
+    In the [Metrics Explorer](/explore/metrics), chart a histogram such as `http.server.request.duration` with `p95` or `p99`. Group it by route if you want to know which endpoint moved.
+  </Step>
+  <Step title="Open the exemplars">
+    Click the series row in the table under the chart. Or switch to **Heatmap** and click the cell at the time and value you care about, or to **Dist** and click a bar. The **Exemplars** drawer opens with the sampled requests in that slice: time, duration, and trace id.
+  </Step>
+  <Step title="Open the trace">
+    Click **View trace** on an exemplar. The [Traces](/explore/traces) page opens that trace with its waterfall, so you see which span took the time.
+  </Step>
+  <Step title="Read the logs">
+    Click **View logs** in the trace. The [Logs](/explore/logs) page opens filtered to the same `trace_id`, so every log line the request wrote is there.
+  </Step>
+</Steps>
+
+## What decides whether an exemplar exists
+
+- Exemplars are sampled. Each histogram bucket keeps a few per export interval, so a bucket with little traffic can have none even when the metric line shows a value.
+- An exemplar attaches only when the measurement happened inside a trace, or carried an exemplar attribute of its own. A measurement taken outside any span has nothing to link to.
+- A trace exists for an exemplar only when the request was sampled. The [Node.js SDK](/sdk/nodejs/custom-metrics#what-an-exemplar-carries) marks every exemplar with `trace_flags`: `01` means the trace was exported, `00` means the ids exist but no trace was sent. With `00`, filter Logs by the trace id instead of opening the trace.
+
+## Which histograms carry exemplars
+
+| Source | Exemplars |
+| --- | --- |
+| Node.js SDK, auto-instrumented `http.server.request.duration` and `http.client.request.duration` | Yes, for sampled requests |
+| Node.js SDK, `app.http.server.duration` from the Express or Koa adapter | Yes |
+| Node.js SDK, your own histograms recorded with `recordWithExemplar` | Yes, at any sampling |
+| Other OpenTelemetry SDKs | Depends on the SDK |
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Metrics" icon="chart-simple" href="/explore/metrics">
+    Build the chart the pivot starts from.
+  </Card>
+
+  <Card title="Custom metrics" icon="chart-line" href="/sdk/nodejs/custom-metrics">
+    Record your own histograms with exemplars.
+  </Card>
+</CardGroup>

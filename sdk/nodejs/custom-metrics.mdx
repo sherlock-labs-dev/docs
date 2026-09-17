@@ -1,0 +1,208 @@
+---
+title: "Custom metrics"
+description: "Define your own counters, histograms, and gauges, attach exemplars, and follow a spike from a chart to its trace and its logs."
+icon: "chart-line"
+---
+
+## Define instruments
+
+Use `defineMeter` to bind one instrumentation scope for a file of instruments. Define at module scope.
+
+```ts
+import { defineMeter } from '@sherlock-labs/otel';
+
+const m = defineMeter('app.billing');
+
+const settlementDuration = m.histogram('app.order.settlement.duration', {
+  description: 'time to settle one order',
+});
+const settlements = m.counter('app.order.settlements', { unit: '{order}' });
+const queueDepth = m.gauge('app.queue.depth', { unit: '{job}' });
+
+export async function settle(order) {
+  const startedAt = performance.now();
+  await doSettlement(order);
+  const elapsedSeconds = (performance.now() - startedAt) / 1000;
+
+  settlements.add(1, { provider: order.provider });
+  settlementDuration.recordWithExemplar(
+    elapsedSeconds,
+    { provider: order.provider },   // metric attributes (low cardinality)
+    { orderId: order.id },          // exemplar-only attributes (high cardinality)
+  );
+}
+
+queueDepth.record(jobs.length, { queue: 'orders' });
+```
+
+| Factory | Options | Methods |
+|---|---|---|
+| `m.counter(name, opts)` | `unit`, `description` | `add(value, attrs)` |
+| `m.histogram(name, opts)` | `unit`, `description`, `boundaries` | `record(value, attrs)`, `recordWithExemplar(value, attrs, exemplarAttrs)` |
+| `m.gauge(name, opts)` | `unit`, `description` | `record(value, attrs)`. Keeps the last value per attribute set. No exemplars. |
+
+- A definition resolves the real instrument on the first record after `start()`. Records before `start()` or after `stop()` are dropped, not broken. No method throws.
+- The scope name is the `ScopeName` of the metric in Sherlock.
+- The standalone functions `defineCounter`, `defineHistogram`, and `defineGauge` take the same options plus `meterName`. They return the same objects.
+
+<Warning>
+**Never create instruments with `metrics.getMeter()` from the OpenTelemetry API.** The metrics API has no late binding. A meter created before a provider exists returns instruments that are permanent, silent no-ops. They never upgrade and they never error. "Traces arrive, metrics do not" is the symptom.
+</Warning>
+
+## Units and boundaries
+
+- **A histogram's unit defaults to `s`.** Record durations in seconds. Do not name a metric `*_ms`.
+- **A histogram that measures something else declares its unit:** `m.histogram('app.payload.size', { unit: 'By' })`.
+- **Counters and gauges have no default unit.**
+- **`boundaries` is optional.** The default depends on the unit:
+
+| Unit | Default boundaries |
+|---|---|
+| `s`, explicit or default | `0.005 0.01 0.025 0.05 0.075 0.1 0.15 0.2 0.25 0.3 0.35 0.4 0.45 0.5 0.75 1 2.5 5 7.5 10`. The same list the HTTP histograms use. |
+| Any other unit | `0 5 10 25 50 75 100 250 500 750 1000 2500 5000 7500 10000`. The numbers are in the unit the histogram records. |
+
+- An explicit list always wins: `m.histogram('app.batch.duration', { boundaries: [1, 5, 30, 120, 600] })`.
+- Extend a default when you need headroom: `boundaries: [...DEFAULT_DURATION_BOUNDARIES_S, 30, 60]`. Both defaults are exported.
+- Do not transcribe a boundary list into your code. Use the default or extend it.
+- The histogram and its exemplar reservoir get the same list, so an exemplar lands in the bucket its count landed in.
+
+## Attributes on the series and attributes on the exemplar
+
+`recordWithExemplar(value, attrs, exemplarAttrs)` records the value and samples one exemplar into the bucket the value falls in.
+
+- **`attrs`** defines the series. Keep it low cardinality: a provider, a route, a status.
+- **`exemplarAttrs`** rides only on the exemplar and never widens the series. Put high-cardinality keys here: an order id, a job id, a customer id.
+- Record inside the span you want the exemplar to link to. The SDK reads the active span at the moment of the call.
+
+## What an exemplar carries
+
+Whenever a span is active, the exemplar gets that span's trace id and span id, plus a `trace_flags` attribute with the W3C flags byte as two hex digits. This happens at **any** sampling decision.
+
+<CodeGroup>
+```jsonc Sampled request
+// trace_flags 01: the trace was exported. The link opens a real trace.
+{
+  "timeUnixNano": "1756400000000000000",
+  "asDouble": 0.42,
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "spanId": "00f067aa0ba902b7",
+  "filteredAttributes": [
+    { "key": "trace_flags", "value": { "stringValue": "01" } },
+    { "key": "orderId", "value": { "stringValue": "o-1" } }
+  ]
+}
+```
+
+```jsonc Unsampled request
+// trace_flags 00: same ids, but no trace was exported. The ids still match
+// this request's log lines.
+{
+  "timeUnixNano": "1756400000000000000",
+  "asDouble": 0.42,
+  "traceId": "0af7651916cd43dd8448eb211c80319c",
+  "spanId": "b7ad6b7169203331",
+  "filteredAttributes": [
+    { "key": "trace_flags", "value": { "stringValue": "00" } },
+    { "key": "orderId", "value": { "stringValue": "o-1" } }
+  ]
+}
+```
+</CodeGroup>
+
+- Your own `exemplarAttrs` key always wins, `trace_flags` included.
+- With no span in scope, the exemplar has no trace keys and no `trace_flags`.
+- An exemplar with neither a trace context nor an attribute is dropped. There is nothing to click into.
+
+## Two exemplar paths, one limit
+
+- **Your histograms get exemplars at any sampling.** `trace_flags` tells you whether the trace was exported.
+- **The auto-instrumented `http.server.request.duration` and `http.client.request.duration` get exemplars only for sampled requests.** An unsampled request has a non-recording span with no attributes, so the SDK cannot rebuild the metric's attribute set for the exemplar.
+
+## Log correlation
+
+- The pino instrumentation stamps `trace_id`, `span_id`, and `trace_flags` on every log line written inside a request.
+- Every exemplar carries the same three: the ids as its own `traceId` and `spanId`, the flags as the `trace_flags` attribute.
+- The join from a chart to the logs is one filter on `trace_id`. Nothing to configure.
+
+| `trace_flags` | Meaning | Trace link |
+|---|---|---|
+| `01` | The span was sampled and exported. | Opens a real trace. |
+| `00` | The span was not sampled. The ids group the request's logs. | Dead. Pivot to logs by `trace_id`. |
+
+A request gets `00` in two cases: the sample ratio is below 1, or traces are off through the kill switch.
+
+## HTTP server metrics in one line
+
+For Express or Koa, the adapter adds three instruments with exemplars, tagged with the route template.
+
+```ts
+import { applyMetricsMiddleware } from '@sherlock-labs/otel/express'; // or /koa
+
+app.use(applyMetricsMiddleware());
+```
+
+| Metric | Type | Unit | Attributes |
+|---|---|---|---|
+| `app.http.server.count` | counter | none | `route`, `method`, `status_code`, `status` |
+| `app.http.server.errors` | counter | none. Counts responses with status 5xx. | `route`, `method`, `status_code`, `status` |
+| `app.http.server.duration` | histogram | `s` | `route`, `method`, `status_code`, `status` |
+
+- `route` is the framework's route template. `/users/:id` stays one series.
+- Options: `ignoreRequest(req)` skips a request, for SSE, websockets, long polls, and health checks. The adapter does not read the SDK's `ignorePaths`, so `/healthz` is counted here unless you skip it. `routeName(req)` overrides the template. `recordExemplars` defaults to `true`.
+
+```ts
+app.use(applyMetricsMiddleware({ ignoreRequest: (req) => req.path === '/healthz' }));
+```
+
+- The auto-instrumented `http.server.request.duration` uses different attribute keys for the same ideas: `http.route`, `http.request.method`, `http.response.status_code`, `error.type`. One label expression cannot filter both families.
+
+## Reservoirs
+
+- Each histogram bucket keeps `metrics.exemplarsPerBucket` exemplars per export interval, five by default.
+- Reservoirs clear on export.
+- A service that serves a few requests per interval still gets exemplars. One that serves none in an interval exports no data points and no exemplars. This is not a bug.
+
+## How an exemplar finds its data point
+
+At export, an exemplar attaches to a data point by an exact match on metric name plus attributes. A miss is not an error: the data point ships, the chart looks normal, and the exemplar disappears. The SDK logs a throttled **drift warning** when exemplars for a metric match no data point on two consecutive exports. That warning is the signal.
+
+With `recordWithExemplar` this cannot happen. One call feeds one value and one attribute set to both the histogram and the reservoir.
+
+## Test your metrics with a local sink
+
+You can check names, units, buckets, attributes, and exemplars without Sherlock.
+
+1. Write a `node:http` server that accepts `POST /v1/metrics` and `POST /v1/traces` and stores the JSON bodies.
+2. Call `start()` with `endpoint` pointed at it and `instrumentations: []`.
+3. Record.
+4. Call `stop()`. It forces the final flush.
+5. Read the bodies. Each metric carries its scope, unit, boundaries, data points, and exemplars.
+
+```js
+import { start, stop, defineMeter } from '@sherlock-labs/otel';
+
+start({
+  accessToken: 'test',
+  serviceName: 'metrics-test',
+  endpoint: 'http://127.0.0.1:4399', // not 4318: a local collector may already own the OTLP default port
+  instrumentations: [],
+});
+
+const m = defineMeter('app');
+m.histogram('app.work.duration').recordWithExemplar(0.25, { kind: 'report' }, { jobId: 'j-1' });
+
+await stop();
+// read what the sink received
+```
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Custom spans" icon="diagram-project" href="/sdk/nodejs/manual-spans">
+    Record inside the span you want the exemplar to link to.
+  </Card>
+
+  <Card title="Exemplars in Sherlock" icon="link" href="/explore/exemplars">
+    Follow a spike to the request and its logs.
+  </Card>
+</CardGroup>

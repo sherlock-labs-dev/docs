@@ -1,0 +1,105 @@
+---
+title: "Ask an AI assistant"
+sidebarTitle: "AI assistant (MCP)"
+description: "Connect an AI client to Sherlock through the MCP server and analyze logs, traces, and metrics in conversation."
+icon: "plug"
+---
+
+Sherlock has an MCP server. Connect Claude Code, the Claude apps, Cursor, VS Code, Codex, or any other MCP client to it, and ask about your logs, traces, and metrics in plain language. **Settings → MCP** in Sherlock shows the same instructions with copy buttons.
+
+## Try asking
+
+- Tell me about the state of the system using the Sherlock MCP tools
+- How many errors did we get in the last hour?
+- Group today's errors and tell me which one is new
+- Which of today's errors actually matter, and which are just noise?
+- Latency spiked at 14:20. Check the metrics, then pull the traces behind it
+
+## Connect with OAuth
+
+This is the recommended way. Point your client at the server URL and sign in through the browser. There is no token to copy, store, or rotate. Access follows your Sherlock account and can be revoked at any time.
+
+Server URL: `https://mcp.sherlocklabs.dev/mcp`
+
+### Set up your client
+
+<Tabs>
+  <Tab title="Claude Code">
+    1. Add the server, with no header and no token:
+       ```sh
+       claude mcp add sherlock -t http "https://mcp.sherlocklabs.dev/mcp"
+       ```
+    2. Run `/mcp` in Claude Code, select `sherlock`, then choose **Authenticate**.
+    3. Your browser opens. Sign in with your Sherlock account and approve access. Claude Code stores the credentials for you.
+  </Tab>
+  <Tab title="Claude apps">
+    1. Open **Settings → Connectors** and click **Add custom connector**.
+    2. Name it Sherlock and paste the server URL.
+    3. Click **Connect** and sign in with your Sherlock account when the browser prompts you.
+  </Tab>
+  <Tab title="Cursor">
+    1. Press ⌘/Ctrl Shift J to open Cursor Settings.
+    2. Select **Tools & Integrations**, then **New MCP Server**.
+    3. Add Sherlock to the config that opens:
+       ```json
+       {
+         "mcpServers": {
+           "sherlock": {
+             "url": "https://mcp.sherlocklabs.dev/mcp"
+           }
+         }
+       }
+       ```
+    4. Click **Needs login** next to Sherlock and complete sign-in in the browser.
+    5. Optional. To use Sherlock from cursor-agent, run `cursor-agent mcp login sherlock`.
+  </Tab>
+  <Tab title="VS Code">
+    1. Press ⌘/Ctrl P and search for **MCP: Add Server**.
+    2. Select **HTTP (HTTP or Server-Sent Events)**.
+    3. Enter the server URL and press Enter.
+    4. Name it Sherlock and press Enter.
+    5. Allow the authentication flow to complete.
+    6. Activate it with **MCP: List Servers → Sherlock → Start Server**.
+  </Tab>
+  <Tab title="Codex">
+    From your terminal, add the server:
+
+    ```sh
+    codex mcp add sherlock --url https://mcp.sherlocklabs.dev/mcp
+    ```
+
+    The next time you run codex, Sherlock is available and opens the OAuth flow to connect to your account.
+
+    Or edit `~/.codex/config.toml` and add the remote MCP configuration, then restart any running codex session:
+
+    ```toml
+    [mcp_servers.sherlock]
+    url = "https://mcp.sherlocklabs.dev/mcp"
+    ```
+  </Tab>
+  <Tab title="Other">
+    Any client that speaks MCP over Streamable HTTP with OAuth 2.1 can connect with the server URL. Sherlock advertises its authorization server at `/.well-known/oauth-protected-resource`, and that server supports dynamic client registration. Most clients discover everything they need from the URL alone, with no client id or secret to configure.
+  </Tab>
+</Tabs>
+
+## Connect with an API token
+
+A long-lived token works where the browser sign-in flow does not: headless machines and CI, shared automation, or clients that do not implement OAuth. The token grants the same access as your account. Treat it like a password.
+
+```sh
+claude mcp add sherlock -t http "https://mcp.sherlocklabs.dev/mcp" --header "x-api-key: <your-token>"
+```
+
+Generate a token with **Generate MCP token** on **Settings → MCP**. Sherlock inserts it into the command on that page. Copy it right away. You cannot see it again. You can also use an existing token from the **API Tokens** page.
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Get started" icon="rocket" href="/get-started/getting-started">
+    Send your first data before you ask about it.
+  </Card>
+
+  <Card title="Traces" icon="diagram-project" href="/explore/traces">
+    What the assistant sees when it pulls a trace.
+  </Card>
+</CardGroup>

@@ -1,0 +1,71 @@
+---
+title: "Sherlock overview"
+sidebarTitle: "Overview"
+description: "Logs, traces, and metrics from your services in one place, joined by trace id."
+icon: "compass"
+---
+
+Sherlock stores the logs, traces, and metrics your services send over OpenTelemetry and links them by trace id. A spike on a chart opens the request that caused it. The request opens its trace. The trace opens its logs.
+
+<Tip>
+  **Prefer to ask instead of click?** Connect Claude Code, Cursor, or another MCP client to Sherlock and ask "How many errors did we get in the last hour?" or "Latency spiked at 14:20. Check the metrics, then pull the traces behind it." See [Ask an AI assistant](/explore/mcp).
+</Tip>
+
+## How Sherlock works
+
+Three things happen, in order:
+
+- **Send.** Your services export OTLP over HTTP to the Sherlock ingest endpoint with a bearer token. An `env` resource attribute routes each service's data into a source.
+- **Explore.** The Logs, Traces, and Metrics pages search and chart each signal on its own.
+- **Pivot.** `trace_id` joins the three. An exemplar on a histogram carries the trace id of one request, so a chart leads to a trace and a trace leads to its log lines.
+
+<Note>
+  **Using Node.js?** The Sherlock SDK for Node.js is the only Node.js distribution that puts trace-linked exemplars on histograms. Start with the [Node.js quickstart](/sdk/nodejs/quickstart).
+</Note>
+
+## Ways to send data
+
+### Node.js SDK
+
+The [Sherlock distribution of OpenTelemetry for Node.js](/sdk/nodejs/overview) instruments a service with one import, sends traces and metrics, and adds exemplars to every histogram. Your logs keep their own pipeline, stamped with the trace id.
+
+### Other OpenTelemetry SDKs
+
+Any [OpenTelemetry SDK](/send-data/otlp) with an OTLP/HTTP exporter can send to Sherlock. Point the exporter at the ingest endpoint, add the bearer token, and set the `env` attribute.
+
+### OpenTelemetry Collector
+
+An [OpenTelemetry Collector](/send-data/otlp) fans in many services and forwards logs, traces, and metrics to Sherlock through one exporter. This is the usual path for logs.
+
+## Where to explore
+
+- [Logs](/explore/logs). Search, filter by field, open the trace behind a line.
+- [Traces](/explore/traces). Find a trace, read the waterfall, jump to its logs.
+- [Metrics](/explore/metrics). Chart a metric, group by labels, click an exemplar.
+- [Exemplars](/explore/exemplars). Follow a spike to the request and its logs.
+- [Alerts](/explore/alerts). Alert rules on logs and metrics, with notification channels.
+
+## Where you can use Sherlock
+
+- **Web app.** The Logs, Traces, Metrics, Alerts, and Settings pages.
+- **AI assistants.** The [MCP server](/explore/mcp) exposes the same logs, traces, and metrics to Claude Code, the Claude apps, Cursor, VS Code, Codex, and any other MCP client.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Get started" icon="rocket" href="/get-started/getting-started">
+    Create an organization and send your first data.
+  </Card>
+
+  <Card title="Send data" icon="paper-plane" href="/send-data/overview">
+    Pick a source: Node.js SDK, another SDK, or a collector.
+  </Card>
+
+  <Card title="Node.js quickstart" icon="node" href="/sdk/nodejs/quickstart">
+    First traces and metrics from a Node.js service in ten minutes.
+  </Card>
+
+  <Card title="Ask an AI assistant" icon="robot" href="/explore/mcp">
+    Connect an AI client through MCP.
+  </Card>
+</CardGroup>

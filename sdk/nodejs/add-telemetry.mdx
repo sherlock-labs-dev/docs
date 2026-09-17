@@ -1,0 +1,287 @@
+---
+title: "End-to-end steps"
+description: "The full path from credentials to production: register, start, stop, deploy, extend, verify, and operate."
+icon: "list-ol"
+---
+
+This page adds telemetry to a Node.js service that has none today, from credentials to a verified production deploy. If you only want first data, use the [Quickstart](/sdk/nodejs/quickstart). The complete option reference is the [SDK README](https://github.com/sherlock-labs-dev/sherlock-otel-js#readme).
+
+## What you'll learn
+
+- The two ways to start the pipelines, and when each applies
+- What to set per workload at deploy time
+- How to add your own metrics and spans, and how to ship logs
+- How to verify the telemetry and operate the kill switches
+
+## Prerequisites
+
+- A Sherlock organization, and access to **Settings → Collector**
+- A Node.js service on Node.js 20 or later, 20.6 or later for ES modules
+- A secret store or a mounted secret for the bearer token in production
+
+## 1. Get credentials
+
+In Sherlock, open **Settings** and then **Collector**. Copy the **Endpoint** and reveal and copy the **Bearer Token**.
+
+Decide the `env` value for each deployment of this service. Sherlock routes data into a source by `OTEL_RESOURCE_ATTRIBUTES=env=<value>`. The empty state of the Logs, Traces, and Metrics pages repeats these items until data arrives.
+
+## 2. Install
+
+```sh
+npm install @sherlock-labs/otel
+```
+
+- The package needs Node.js 20 or later. ES modules need 20.6 or later for the loader hook in step 3.
+- It brings its own OpenTelemetry dependencies, pinned to exact versions. Do not add `@opentelemetry/*` packages.
+- Import `trace`, `context`, `SpanKind`, and `SpanStatusCode` from `@sherlock-labs/otel`. Never import them from `@opentelemetry/api`. Two copies of the API in one process means one of them sees no provider.
+- Type definitions are included. TypeScript needs no extra package.
+- The SDK is in alpha. Until the package is on a public registry, Sherlock provides it as a tarball. Install it with a `file:` dependency and commit the tarball next to your lockfile. In a Docker build, copy the tarball's directory into the image before the install step, or the install cannot resolve it.
+
+## 3. Register the SDK before your app loads
+
+A patch wraps a library at the moment that library loads. A library that loads earlier gets no patch, and the SDK never traces it. Nothing warns you. How you register depends on your module system, so decide that first:
+
+- **ES modules.** The entry is `.mjs`, or `package.json` has `"type": "module"`.
+- **CommonJS.** The entry is `.cjs`, or `package.json` has no `"type"` field. TypeScript with `module: NodeNext` and no `"type"` emits CommonJS.
+
+<Tabs>
+  <Tab title="ES modules">
+    A line-1 import is **not enough**. Static imports are linked before any code runs, so a self-registering import arrives after your libraries loaded. The `http` built-in still gets patched, so you see `GET` spans and think it works, while Express, Postgres, Redis, and pino stay dark. Register the loader hook with `--import`.
+
+    ```js
+    // otel.mjs
+    import { register } from 'node:module';
+    register('@opentelemetry/instrumentation/hook.mjs', import.meta.url);
+    await import('@sherlock-labs/otel/register');
+    ```
+
+    ```sh
+    node --import ./otel.mjs index.js
+    ```
+
+    Put the same command in your `start` script. `@opentelemetry/instrumentation` is installed with the SDK. In a container, set `NODE_OPTIONS="--import ./otel.mjs"` instead of changing the command.
+  </Tab>
+  <Tab title="CommonJS">
+    Add one line as the **first line** of your entrypoint. A file's requires run in order, so the first line is enough.
+
+    ```js
+    // index.js — line 1, always
+    require('@sherlock-labs/otel/register');
+    ```
+  </Tab>
+</Tabs>
+
+- Registering installs the auto-instrumentation patches. They record nothing until the pipelines start.
+- A bundler can reorder imports. Check the built output.
+
+## 4. Start the pipelines
+
+There are two ways to start. Pick one.
+
+### Zero-code
+
+Set the token and the service name in the environment. The register import starts the pipelines on its own.
+
+```sh
+export SHERLOCK_ACCESS_TOKEN=<the bearer token>
+export OTEL_SERVICE_NAME=checkout-api
+```
+
+Nothing else is required.
+
+### From code
+
+Use `start()` when the token is not in the environment at process start. The token can come from a secret manager, a mounted file, or an async config loader.
+
+```js
+// Registered in step 3: --import ./otel.mjs for ES modules,
+// require('@sherlock-labs/otel/register') on line 1 for CommonJS.
+import { readFileSync } from 'node:fs';
+import { start } from '@sherlock-labs/otel';
+import { logger } from './logger.js';
+
+start({
+  // A token mounted as a file, read once at boot.
+  accessToken: readFileSync('/var/secrets/SHERLOCK_ACCESS_TOKEN', 'utf8').trim(),
+  // Your pino logger receives the SDK's own diagnostics.
+  logger,
+  // Keep only these patches. dns and net stay off: per-socket spans are a lot of spans.
+  instrumentations: {
+    enabled: ['http', 'express', 'pg', 'ioredis', 'undici', 'runtime-node', 'pino'],
+  },
+});
+```
+
+- `start()` always wins. If the environment also holds both variables and the auto-start ran first, `start()` takes the pipelines over with your options.
+- `start()` never throws. A missing token or service name leaves telemetry off and logs one line. An endpoint that is not an `http` or `https` URL is replaced by the default, with a warning. A well-formed but wrong endpoint fails later, at export. See [Troubleshooting](/sdk/nodejs/troubleshooting).
+- Options you are likely to use:
+
+| Option | When |
+|---|---|
+| `instrumentations: { enabled: [...] }` or `{ disabled: ['dns', 'net'] }` | Narrow the patch set. A name is the package suffix: `http` means `@opentelemetry/instrumentation-http`. |
+| `logger` | Route SDK diagnostics into your logs. Pass your pino logger. |
+| `exporter: { host }` | Your exporters go through a gateway that routes by the `Host` header. The SDK sends over `node:http`, so the header survives. |
+| `tracing: { sampleRatio }` | Trace a share of requests. Parent-based: a request is traced whole or not at all. |
+| `metrics: { exportIntervalMillis }` | Change the export interval. 30 seconds by default. |
+| `tracing: false` with `instrumentations: []` and no register import | Metrics only. Nothing is patched. Custom metrics still get exemplars, but without trace ids. |
+
+## 5. Stop on shutdown
+
+Call `stop()` in every shutdown handler, in every process type.
+
+```js
+import { stop } from '@sherlock-labs/otel';
+
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, async () => {
+    server.close();
+    await stop();
+    process.exit(0);
+  });
+}
+```
+
+- `stop()` flushes the last metric interval and the pending span batch.
+- Without it, every deploy loses the last 30 seconds of metrics and the last five seconds of spans.
+- A background worker needs `stop()` as much as a web server does.
+
+## 6. Run locally and read the boot line
+
+Start the service with no token. The SDK logs exactly one line and stays off. The app runs as normal.
+
+```text
+[otel] sherlock: no access token (SHERLOCK_ACCESS_TOKEN) — telemetry stays off
+```
+
+Start it with a token. A rejected token shows at the default log level as an export failure whose message ends in `Unauthorized`. `OTEL_LOG_LEVEL=debug` shows every export attempt.
+
+Then send a few requests and open Sherlock:
+
+- **Traces** shows your service within seconds.
+- **Metrics** lists `http.server.request.duration` after one export interval, about a minute with the catalog refresh.
+
+## 7. Deploy
+
+Set these per workload.
+
+| Variable | Value | Why |
+|---|---|---|
+| `OTEL_SERVICE_NAME` | One name per process type, for example `checkout-api` and `checkout-api-worker`. | Each process type appears as its own service. |
+| `SHERLOCK_ACCESS_TOKEN` | From a secret store. | Prefer a mounted secret over a plaintext variable. With a mounted file, use `start()`. |
+| `SHERLOCK_ENDPOINT` | Only for a private route. | The default is the public ingest endpoint. |
+| `OTEL_RESOURCE_ATTRIBUTES` | `env=<value>` | The routing key into a Sherlock source. |
+| `SHERLOCK_TRACES_ENABLED` | `true` | Seed the kill switch, so a later `false` is a config change, not a code change. |
+| `SHERLOCK_METRICS_ENABLED` | `true` | Same. |
+| `SHERLOCK_METRICS_EXPORT_INTERVAL` | `30000` | The default, made explicit. |
+
+Two things you do not need to configure:
+
+- `/healthz`, `/livez`, and `/healthcheck` get no span and no `http.server.request.duration` point. Add more paths with `SHERLOCK_IGNORE_PATHS` or the `ignorePaths` option. The Express and Koa adapter does not read that list: pass `ignoreRequest` to keep health checks out of `app.http.server.*`.
+- The SDK never traces or meters its own export requests. It skips them by host **and** port, so a collector on `localhost` does not hide the other services on that host.
+
+## 8. Add your own metrics
+
+```js
+import { defineMeter } from '@sherlock-labs/otel';
+
+const m = defineMeter('checkout');
+const settlements = m.counter('app.order.settlements', { unit: '{order}' });
+const settlementDuration = m.histogram('app.order.settlement.duration'); // unit s
+
+settlements.add(1, { provider: 'card' });
+settlementDuration.recordWithExemplar(elapsedSeconds, { provider: 'card' }, { orderId });
+```
+
+- Define at module scope. A definition resolves its instrument on the first record after `start()`.
+- Never call `metrics.getMeter()` from the OpenTelemetry API yourself. A meter created before `start()` is a permanent, silent no-op.
+- Durations are in seconds, with unit `s`. Do not name a metric `*_ms`.
+- For Express or Koa, `applyMetricsMiddleware()` adds `app.http.server.count`, `.errors`, and `.duration` with exemplars in one line.
+
+Details: [Custom metrics](/sdk/nodejs/custom-metrics).
+
+## 9. Add spans for what auto-instrumentation misses
+
+- A queue worker has no incoming request. Open one root span per job, or every database call inside the job is an orphan.
+- A database client with no instrumentation needs a `CLIENT` span around each call.
+- A manual span around a route the HTTP instrumentation already traces makes a duplicate span. Reserve manual spans for the gaps.
+
+Details and a copy-ready helper: [Custom spans](/sdk/nodejs/manual-spans).
+
+## 10. Ship and correlate logs
+
+The SDK does not ship logs. It stamps `trace_id`, `span_id`, and `trace_flags` on every pino log line written inside a request, and every exemplar carries the same three, so the join is one filter on `trace_id`. The lines still have to reach Sherlock. Two ways:
+
+<Tabs>
+  <Tab title="pino transport">
+    Send log records straight from the process with `pino-opentelemetry-transport`. It reads the pino fields the SDK stamped and sets the trace id on each record.
+
+    ```sh
+    npm install pino-opentelemetry-transport   # version 4 needs pino 10
+    ```
+
+    ```js
+    import pino from 'pino';
+    
+    const log = pino(pino.transport({ target: 'pino-opentelemetry-transport' }));
+    ```
+
+    The transport reads the standard OpenTelemetry variables. `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` are already set for the SDK. Add the logs endpoint and the header:
+
+    ```sh
+    export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://ingest-1.sherlocklabs.dev/v1/logs
+    export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <the bearer token>"
+    ```
+
+    The transport brings its own copy of the OpenTelemetry logs SDK. That is expected and does not conflict with the Sherlock SDK.
+  </Tab>
+  <Tab title="Collector">
+    Keep logging to stdout and let an OpenTelemetry Collector tail the output and forward it to Sherlock. This is the usual path on Kubernetes. See [OpenTelemetry SDKs and collectors](/send-data/otlp).
+  </Tab>
+</Tabs>
+
+- `trace_flags` is `01` when a trace exists and `00` when the ids exist but no trace was exported.
+- A log line written outside a request, such as a startup message, has no trace id. A line written inside a [root span you open yourself](/sdk/nodejs/manual-spans) does.
+
+## 11. Verify
+
+Run this after the first deploy and after every SDK upgrade.
+
+- [ ] **Traces** lists every service name you deploy, web and worker.
+- [ ] A runtime metric such as `nodejs.eventloop.utilization` reports for every service name. This proves the SDK started in each process, independent of traffic.
+- [ ] `http.server.request.duration` and `http.client.request.duration` arrive with unit `s` and the same 20-boundary list.
+- [ ] Each custom histogram arrives with unit `s` and values in seconds. A 250 ms request lands in the `0.25` bucket. No metric name ends in `_ms`.
+- [ ] Exemplars attach to `http.server.request.duration` and to each custom histogram, with a hex `traceId`, a `spanId`, and `trace_flags`. Error series, 4xx and 5xx, carry them too.
+- [ ] Click an exemplar with `trace_flags` `01`. The trace opens. Filter Logs by its `trace_id`. The request's log lines appear.
+- [ ] The server span name includes the route, for example `GET /work/:id`, and `http.server.request.duration` carries an `http.route` label. A bare `GET` means the app is under-instrumented. See step 3.
+- [ ] Spans come only from the instrumentations you enabled. `/healthz`, `/livez`, and `/healthcheck` are absent from spans and HTTP metrics.
+- [ ] No client span and no `http.client.request.duration` series names the ingest host.
+- [ ] No drift warning in any process's logs over two or more export intervals.
+- [ ] Set `SHERLOCK_TRACES_ENABLED=false` on one instance. New traces from it stop. Custom exemplars still arrive with `trace_flags` `00`. Set it back.
+- [ ] Set `SHERLOCK_METRICS_ENABLED=false` on one instance. Its metric series stop at the next export. Set it back. No double count on resume.
+- [ ] Look at span volume. The Express and Koa instrumentations emit one span per middleware layer per request. If that is noise, disable the framework instrumentation with `{ disabled: ['express'] }` or accept it.
+
+## 12. Operate
+
+- **Kill switches.** `SHERLOCK_TRACES_ENABLED` and `SHERLOCK_METRICS_ENABLED` set the state at start. `setTelemetryEnabled({ traces, metrics })` flips it at runtime. Wire it to your feature flags. Traces off finishes in-flight traces whole. Metrics off leaves a gap, never a double count, because temporality is delta.
+- **Sampling.** `OTEL_TRACES_SAMPLER_ARG` or `tracing.sampleRatio`, parent-based.
+- **Upgrades.** The telemetry shape is part of the SDK's API. The SDK is on `0.x` while in alpha, so a minor version can still change it. From 1.0, a change to metric names, attributes, units, or default boundaries is a major version, and a minor version is additive only. Every OpenTelemetry dependency is pinned exactly. Read the release notes, upgrade as a deliberate change, deploy one instance, and re-run step 11.
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Custom metrics" icon="chart-line" href="/sdk/nodejs/custom-metrics">
+    Define your own instruments with exemplars.
+  </Card>
+
+  <Card title="Custom spans" icon="diagram-project" href="/sdk/nodejs/manual-spans">
+    Trace queue jobs and database calls.
+  </Card>
+
+  <Card title="Troubleshooting" icon="wrench" href="/sdk/nodejs/troubleshooting">
+    Symptom, cause, and fix.
+  </Card>
+
+  <Card title="SDK README" icon="book" href="https://github.com/sherlock-labs-dev/sherlock-otel-js#readme">
+    Every option and environment variable.
+  </Card>
+</CardGroup>

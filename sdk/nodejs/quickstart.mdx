@@ -1,0 +1,213 @@
+---
+title: "Quickstart"
+description: "Get the first traces and metrics from a Node.js service into Sherlock in about ten minutes."
+icon: "rocket"
+---
+
+This page takes a Node.js service with no telemetry to first data in Sherlock. The full path, with the from-code start, deployment, and verification, is in [End-to-end steps](/sdk/nodejs/add-telemetry).
+
+## What you'll learn
+
+- Where to find your collector credentials
+- How to install and register the SDK
+- The environment variables that start telemetry
+- What first data looks like in Sherlock
+
+## Prerequisites
+
+- A Sherlock organization, and access to **Settings → Collector**
+- A Node.js service on Node.js 20 or later, 20.6 or later for ES modules
+- The SDK tarball, until the package is on a public registry
+
+## Steps
+
+<Steps>
+  <Step title="Get your credentials">
+    In Sherlock, open **Settings** and then **Collector**. The **Collector Credentials** card shows two values.
+
+    - **Endpoint.** Click the copy button.
+    - **Bearer Token.** Click **Reveal**, then copy it.
+
+    Decide the value of the `env` attribute for this service, for example `prod` or `staging`. Sherlock routes data into a source by this value.
+
+    <Frame caption="Settings → Collector → Collector Credentials">
+      ![The Collector page, with the Endpoint field, a copy button, and the masked Bearer Token with a reveal button](/images/collector-credentials.jpg)
+    </Frame>
+  </Step>
+
+  <Step title="Install the package">
+    ```sh
+    npm install @sherlock-labs/otel
+    ```
+
+    The package needs Node.js 20 or later, and 20.6 or later for ES modules. It brings its own OpenTelemetry dependencies. Do not add `@opentelemetry/*` packages yourself. Type definitions are included.
+
+    <Note>
+    The SDK is in alpha. Until the package is on a public registry, Sherlock provides it as a tarball. Put the tarball in your repository, point the dependency at it, and run `npm install` again:
+
+    ```json
+    "@sherlock-labs/otel": "file:vendor/sherlock-labs-otel-0.2.6.tgz"
+    ```
+    </Note>
+  </Step>
+
+  <Step title="Register the SDK before your app loads">
+    The SDK patches libraries at the moment they load, so it must load first. How depends on your module system.
+
+    <Tabs>
+      <Tab title="ES modules">
+        Your entry is `.mjs`, or `package.json` has `"type": "module"`. A line-1 import is **not enough** here: static imports are linked before any code runs, so the patches would arrive too late. Register a loader hook with `--import` instead.
+
+        Create `otel.mjs` next to your entrypoint:
+
+        ```js
+        // otel.mjs
+        import { register } from 'node:module';
+        register('@opentelemetry/instrumentation/hook.mjs', import.meta.url);
+        await import('@sherlock-labs/otel/register');
+        ```
+
+        Run your app with it, and put the same command in your `start` script:
+
+        ```sh
+        node --import ./otel.mjs index.js
+        ```
+
+        ```json
+        "scripts": { "start": "node --import ./otel.mjs index.js" }
+        ```
+
+        `@opentelemetry/instrumentation` is installed with the SDK. You do not add it. In a container, set `NODE_OPTIONS="--import ./otel.mjs"` instead of changing the command.
+      </Tab>
+      <Tab title="CommonJS">
+        Your entry is `.cjs`, or `package.json` has no `"type"` field. TypeScript with `module: NodeNext` and no `"type"` emits CommonJS. Add one line as the **first line** of your entrypoint:
+
+        ```js
+        // index.js — line 1, always
+        require('@sherlock-labs/otel/register');
+        
+        const express = require('express');
+        // the rest of your app
+        ```
+
+        A library that loads before this line is never traced, and nothing warns you. If you bundle your app, check the built output.
+      </Tab>
+    </Tabs>
+
+    Registering installs the patches. They record nothing until the pipelines start.
+  </Step>
+
+  <Step title="Set three environment variables and run">
+    ```sh
+    export SHERLOCK_ACCESS_TOKEN=<the bearer token>
+    export OTEL_SERVICE_NAME=checkout-api
+    export OTEL_RESOURCE_ATTRIBUTES=env=prod
+    node --import ./otel.mjs index.js   # ES modules
+    node index.js                       # CommonJS
+    ```
+
+    The register entry starts the pipelines on its own when it finds `SHERLOCK_ACCESS_TOKEN` and `OTEL_SERVICE_NAME`. There is no code to write.
+
+    The default endpoint is `https://ingest-1.sherlocklabs.dev`. Set `SHERLOCK_ENDPOINT` only when the Endpoint in Settings shows a different value.
+  </Step>
+
+  <Step title="Send some requests">
+    Hit a few routes of your service.
+
+    ```sh
+    curl http://localhost:3000/hello
+    ```
+  </Step>
+
+  <Step title="See the data in Sherlock">
+    - **Traces.** Open **Traces**. Your service name appears within about five seconds. Spans leave in batches, so keep the app running. A process that exits without `stop()` drops the pending batch. Open a trace to see the request and its spans.
+    - **Metrics.** Open **Metrics**. `http.server.request.duration` appears after the first export interval, 30 seconds by default. The catalog refreshes every 60 seconds, so allow about a minute.
+    - **Logs.** If your service logs with pino, each line written inside a request now carries `trace_id`, `span_id`, and `trace_flags`. The SDK does not ship logs. [Ship and correlate logs](/sdk/nodejs/add-telemetry#10-ship-and-correlate-logs) shows the two ways to send them.
+
+    <Frame caption="Traces: your service and its requests">
+      ![The Traces page listing requests of one service with span counts and durations](/images/traces-list.jpg)
+    </Frame>
+    <Frame caption="Metrics: http.server.request.duration">
+      ![The Metrics Explorer charting the p95 of http.server.request.duration](/images/metrics-http-duration.jpg)
+    </Frame>
+  </Step>
+</Steps>
+
+## The whole thing in one file
+
+This Express app is the quickstart plus one custom histogram with an exemplar and a clean shutdown. Save it as `app.mjs` next to the `otel.mjs` preload from step 3 and run `node --import ./otel.mjs app.mjs`.
+
+```js
+// app.mjs — registered through --import ./otel.mjs, so no register import here
+import { defineMeter, stop } from '@sherlock-labs/otel';
+import { applyMetricsMiddleware } from '@sherlock-labs/otel/express';
+import express from 'express';
+
+const m = defineMeter('app');
+const workDuration = m.histogram('app.work.duration'); // unit s, seconds buckets
+
+const app = express();
+app.use(applyMetricsMiddleware()); // app.http.server.count / .errors / .duration
+
+app.get('/hello', (_req, res) => {
+  res.json({ hello: 'world' });
+});
+
+app.get('/work', async (_req, res) => {
+  const jobId = `job-${Math.round(Math.random() * 1e6)}`;
+  const startedAt = performance.now();
+  await new Promise((resolve) => setTimeout(resolve, 100 + Math.random() * 200));
+  const seconds = (performance.now() - startedAt) / 1000;
+  // 2nd argument: low-cardinality metric attributes. 3rd: high-cardinality exemplar attributes.
+  workDuration.recordWithExemplar(seconds, { kind: 'report' }, { jobId });
+  res.json({ jobId, seconds });
+});
+
+const server = app.listen(3000);
+
+process.on('SIGTERM', async () => {
+  server.close();
+  await stop(); // flushes the last metric interval and the pending span batch
+  process.exit(0);
+});
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Nothing arrives">
+    Look at the first lines of your process output. With no token, the SDK logs one line and stays off:
+
+    ```text
+    [otel] sherlock: no access token (SHERLOCK_ACCESS_TOKEN) — telemetry stays off
+    ```
+
+    A rejected token shows at the default log level as an export failure whose message ends in `Unauthorized`. Compare the token with **Settings → Collector**. `OTEL_LOG_LEVEL=debug` shows every export attempt.
+  </Accordion>
+
+  <Accordion title="Bare GET spans, and no http.route on the HTTP metric">
+    The app is an ES module and the SDK was registered with an import instead of the `--import` preload. Go back to step 3.
+  </Accordion>
+</AccordionGroup>
+
+More cases are in [Troubleshooting](/sdk/nodejs/troubleshooting).
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="End-to-end steps" icon="list-ol" href="/sdk/nodejs/add-telemetry">
+    Start from code, deploy, verify, and operate.
+  </Card>
+
+  <Card title="Custom metrics" icon="chart-line" href="/sdk/nodejs/custom-metrics">
+    Define your own instruments with exemplars.
+  </Card>
+
+  <Card title="Custom spans" icon="diagram-project" href="/sdk/nodejs/manual-spans">
+    Trace queue jobs and database calls.
+  </Card>
+
+  <Card title="Troubleshooting" icon="wrench" href="/sdk/nodejs/troubleshooting">
+    Symptom, cause, and fix.
+  </Card>
+</CardGroup>

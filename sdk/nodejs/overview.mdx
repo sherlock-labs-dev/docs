@@ -1,0 +1,65 @@
+---
+title: "Sherlock SDK for Node.js"
+sidebarTitle: "Overview"
+description: "Add traces, metrics, and trace-linked exemplars to a Node.js service with one import."
+icon: "compass"
+---
+
+`@sherlock-labs/otel` is the Sherlock distribution of [OpenTelemetry JS](https://github.com/open-telemetry/opentelemetry-js). You add it to a Node.js service. It sends traces and metrics to Sherlock and puts a trace-linked **exemplar** on every histogram it manages, so a spike on a chart links to the request that caused it, and then to the logs of that request.
+
+## How the SDK works
+
+- **Register.** A register entry patches libraries as they load: HTTP, Express, Koa, Postgres, Redis, pino, and more.
+- **Start.** The pipelines start on their own from two environment variables, or from a `start()` call when the token arrives later. Everything exports over OTLP/HTTP with your bearer token.
+- **Link.** Every histogram bucket keeps a few sampled measurements with the trace id and span id of the request. Log lines written inside a request get the same ids.
+
+<Warning>
+The SDK is in **alpha**. The package is not on a public registry yet. Today it arrives as a tarball that you install with a `file:` dependency. The API is the same on both paths.
+</Warning>
+
+## What you get
+
+### Traces
+
+Auto-instrumented spans for the libraries you use, plus [custom spans](/sdk/nodejs/manual-spans) for queue jobs and database calls that have no instrumentation.
+
+### Metrics
+
+`http.server.request.duration` and `http.client.request.duration` for every request, Node.js runtime metrics, the `app.http.server.*` family from the Express or Koa adapter, and your own [custom metrics](/sdk/nodejs/custom-metrics).
+
+### Exemplars
+
+A sampled measurement on every histogram bucket, with the trace id and span id of the request. Your own histograms get them too. The upstream SDK cannot emit exemplars at all ([opentelemetry-js#5147](https://github.com/open-telemetry/opentelemetry-js/issues/5147)).
+
+### Log correlation
+
+The SDK does **not** ship logs. It stamps `trace_id`, `span_id`, and `trace_flags` on every pino log line inside a request, so one filter joins a chart, a trace, and the logs. A pino OTLP transport or a collector sends the lines to Sherlock. See [Ship and correlate logs](/sdk/nodejs/add-telemetry#10-ship-and-correlate-logs).
+
+## Requirements
+
+| Requirement | Value |
+|---|---|
+| Node.js | 20 or later. 20.6 or later for ES modules. |
+| Module systems | ES modules and CommonJS |
+| TypeScript | Type definitions included |
+| Frameworks with a metrics adapter | Express, Koa |
+| Peer dependency | `@opentelemetry/api` 1.9.1 |
+
+The package brings its own OpenTelemetry dependencies, pinned to exact versions. Do not add `@opentelemetry/*` packages yourself. Import the trace API from `@sherlock-labs/otel`.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/sdk/nodejs/quickstart">
+    First data in ten minutes.
+  </Card>
+  <Card title="End-to-end steps" icon="list-ol" href="/sdk/nodejs/add-telemetry">
+    From credentials to a verified production deploy.
+  </Card>
+  <Card title="Custom metrics" icon="chart-line" href="/sdk/nodejs/custom-metrics">
+    Define your own instruments with exemplars.
+  </Card>
+  <Card title="Custom spans" icon="diagram-project" href="/sdk/nodejs/manual-spans">
+    Trace queue jobs and database calls.
+  </Card>
+</CardGroup>

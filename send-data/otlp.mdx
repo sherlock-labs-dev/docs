@@ -1,0 +1,99 @@
+---
+title: "OpenTelemetry SDKs and collectors"
+sidebarTitle: "OpenTelemetry SDKs and collectors"
+description: "Point any OTLP/HTTP exporter at Sherlock: endpoint, bearer token, and the env attribute. This is also how logs arrive."
+icon: "arrow-right-arrow-left"
+---
+
+Sherlock ingests OTLP over HTTP. Any OpenTelemetry SDK or an OpenTelemetry Collector can send to it with three settings.
+
+| Setting | Value |
+| --- | --- |
+| Endpoint | `https://ingest-1.sherlocklabs.dev`. The signal paths `/v1/logs`, `/v1/traces`, and `/v1/metrics` are appended by the exporter. |
+| Header | `Authorization: Bearer <token>`, the Bearer Token from **Settings → Collector**. |
+| Resource attribute | `env=<value>`. Sherlock routes data into a source by this value. |
+
+## OpenTelemetry Collector
+
+Use a collector when you run many services, or when you want logs from files and container output. **Settings → Collector** shows the exporter section with your endpoint and a copy button. The snippet there reads the token from the collector's environment variable `OTEL_EXPORTER_BEARER_TOKEN`, so the token stays out of the config file.
+
+```yaml
+exporters:
+  otlphttp:
+    endpoint: https://ingest-1.sherlocklabs.dev
+    headers:
+      Authorization: "Bearer <token>"
+```
+
+A complete collector configuration adds receivers, the `env` attribute, and pipelines:
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  resource:
+    attributes:
+      - key: env
+        value: prod
+        action: upsert
+  batch: {}
+
+exporters:
+  otlphttp:
+    endpoint: https://ingest-1.sherlocklabs.dev
+    headers:
+      Authorization: "Bearer <token>"
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [otlphttp]
+    traces:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [otlphttp]
+    metrics:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [otlphttp]
+```
+
+To collect logs from files or containers, add a `filelog` receiver to the logs pipeline. The collector documentation describes its options.
+
+## Other OpenTelemetry SDKs
+
+Every OpenTelemetry SDK reads the same environment variables. Set them and the SDK's OTLP/HTTP exporter sends to Sherlock.
+
+```sh
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest-1.sherlocklabs.dev
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>"
+export OTEL_SERVICE_NAME=checkout-api
+export OTEL_RESOURCE_ATTRIBUTES=env=prod
+```
+
+Sherlock accepts OTLP/HTTP in protobuf and in JSON. Exemplars on histograms depend on the SDK. The [Sherlock SDK for Node.js](/sdk/nodejs/overview) is the one that sends them.
+
+## What to expect
+
+- **Logs** appear within about a minute. The empty Logs page repeats the three settings until then.
+- **Traces** appear within seconds of the exporter's batch. The Traces list shows traces with more than one span, so send a request that makes at least one nested call.
+- **Metrics** appear after the sender's first export interval. The metric catalog refreshes every 60 seconds.
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Get started" icon="rocket" href="/get-started/getting-started">
+    Credentials, the env value, and first data.
+  </Card>
+
+  <Card title="Node.js SDK" icon="node" href="/sdk/nodejs/overview">
+    The distribution with exemplars.
+  </Card>
+</CardGroup>

@@ -1,0 +1,49 @@
+---
+title: "Send data overview"
+sidebarTitle: "Overview"
+description: "The ways to send logs, traces, and metrics to Sherlock, and what every source needs."
+icon: "compass"
+---
+
+Sherlock ingests OpenTelemetry data over OTLP/HTTP. Any SDK or collector that speaks OTLP can send to it. The Sherlock SDK for Node.js adds trace-linked exemplars on top.
+
+## What every source needs
+
+| Item | Value | Where to find it |
+|---|---|---|
+| Endpoint | `https://ingest-1.sherlocklabs.dev`, with `/v1/logs`, `/v1/traces`, or `/v1/metrics` appended | **Settings → Collector** |
+| Authorization | `Authorization: Bearer <token>` | **Settings → Collector**, click **Reveal** |
+| Routing | `OTEL_RESOURCE_ATTRIBUTES=env=<value>` | The value you chose for this deployment |
+
+## Types of sources
+
+### Node.js SDK
+
+The [Sherlock distribution of OpenTelemetry for Node.js](/sdk/nodejs/overview) instruments a service with one import and sends traces and metrics. It puts an exemplar on every histogram, so a chart links to the request behind a spike. It does not ship logs. The pino instrumentation stamps the trace id on each log line, and a pino OTLP transport or a collector sends the lines. See [Ship and correlate logs](/sdk/nodejs/add-telemetry#10-ship-and-correlate-logs).
+
+### Other OpenTelemetry SDKs
+
+Java, Go, Python, .NET, and the other [OpenTelemetry SDKs](/send-data/otlp) send with their OTLP/HTTP exporters. Set the endpoint, the header, and the resource attribute. Exemplars depend on the SDK.
+
+### OpenTelemetry Collector
+
+An [OpenTelemetry Collector](/send-data/otlp) receives from many services and forwards to Sherlock with one `otlphttp` exporter. This is the usual way to send logs, and the way to add Sherlock next to an existing pipeline.
+
+## Which signal comes from where
+
+| Signal | Node.js SDK | Other SDKs | Collector |
+|---|---|---|---|
+| Traces | Yes, with auto-instrumentation | Yes | Yes |
+| Metrics | Yes, with exemplars | Yes | Yes |
+| Logs | Not by the SDK. A pino OTLP transport or a collector sends them, with trace ids on every line. | Depends on the SDK | Yes |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Node.js quickstart" icon="node" href="/sdk/nodejs/quickstart">
+    First traces and metrics in ten minutes.
+  </Card>
+  <Card title="OpenTelemetry SDKs and collectors" icon="diagram-project" href="/send-data/otlp">
+    Endpoint, header, and resource attribute for any OTLP sender.
+  </Card>
+</CardGroup>

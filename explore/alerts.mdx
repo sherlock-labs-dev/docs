@@ -1,0 +1,66 @@
+---
+title: "Alerts"
+description: "Run a query on a schedule, check a condition, and notify Slack, email, or a webhook."
+icon: "bell"
+---
+
+An alert rule runs a query against one of your tables on a schedule. When the condition holds, Sherlock sends a notification to the channels you chose. The Alerts page lists your rules with their frequency, condition, channels, last run, and last trigger.
+
+## Create a rule
+
+Open **Alerts** and click **New**. Start from a template or from an empty form.
+
+| Template | What it does |
+| --- | --- |
+| **Error Spike** | Counts error lines in the last 5 minutes, every 5 minutes, and triggers when the count is above 10. |
+| **Error Digest** | Groups errors by message, kind, and service in the last 5 minutes, every 5 minutes, and triggers when any rows come back. |
+| **No Logs Received** | Counts lines in the last 10 minutes, every 10 minutes, and triggers when the count is below 1. |
+
+A template fills in the column names of the table you pick. The Error Spike query looks like this before the columns are filled in:
+
+```sql
+SELECT count() AS cnt
+FROM {{table}}
+WHERE {{timestamp}} >= now() - INTERVAL 5 MINUTE
+  AND lower({{severity}}) = 'error'
+```
+
+The form has these fields.
+
+- **Name** and **Description**.
+- **Data Source** and **Table**: where the query runs.
+- **Query**: a SQL query against the table. Give the column you want to compare an alias, such as `cnt`.
+- **Schedule**: **Interval** runs every N minutes or hours. **Daily**, **Weekdays**, and **Weekly** run at a time you choose. **Custom** takes a set of days and a time, or a 5-field cron expression in UTC.
+- **Condition**: **Any rows returned**, **Value above**, **Value above or equal to**, **Value below**, **Value below or equal to**, **Value equal to**, **Value not equal to**, **Row count above**, or **Row count below**. A value condition reads the **Field** you name, for example `cnt`, from the first row. Every condition except **Any rows returned** takes a **Threshold**.
+- **Notification Channels**: one or more channels from the Notification Channels page.
+- **Enable AI Summary**: adds a summary written by a model to the notification. You set the **Prompt**, the **Model**, and **Max Tokens**. The prompt can use `{{alertName}}`, `{{resultRowCount}}`, and `{{resultRows}}`.
+
+The **Test & Preview** panel on the right runs the rule before you save it. **Run query** shows the rows and whether the condition holds. **Send test notification** sends the result to the selected channels. **Preview AI summary** shows the summary text.
+
+## How rules run
+
+- Sherlock checks every minute which rules are due, runs their queries, and evaluates the condition.
+- A rule that triggers sends one notification per channel.
+- The Alerts table shows **Last Run** and **Last Triggered** for each rule.
+
+## Notification channels
+
+Open **Notification Channels** in the sidebar to add a channel. Each channel has a **Display Name** and one of three types.
+
+| Type | What happens |
+| --- | --- |
+| **Slack** | Alerts are posted to your Slack channel when incidents are created or updated. |
+| **Email** | Notifications are sent to the email addresses you list, separated by commas. |
+| **Webhook** | An HTTP POST with the alert payload is sent to your endpoint, so any external service can receive it. |
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Logs" icon="scroll" href="/explore/logs">
+    The query syntax for the lines a rule counts.
+  </Card>
+
+  <Card title="Ask an AI assistant" icon="plug" href="/explore/mcp">
+    Ask which errors matter before you write a rule for them.
+  </Card>
+</CardGroup>

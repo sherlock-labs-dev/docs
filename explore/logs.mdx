@@ -1,0 +1,62 @@
+---
+title: "Logs"
+description: "Search log lines with plain text or filters, narrow them with facets, and open the trace behind a line."
+icon: "scroll"
+---
+
+The Logs page searches the log lines your services send. Type a word or a filter, pick a time range, and open a line to see every field and jump to its trace.
+
+## The search bar
+
+The search bar reads what you type in one of two ways.
+
+- **Plain text** searches the message. `timeout` matches every line whose message contains `timeout`. The match is case-sensitive. Quote a phrase to search for it as one term: `"connection reset"`.
+- **A filter** is any query that contains an operator: `=`, `!=`, `<`, `>`, `LIKE`, `ILIKE`, `IN`, `NOT`, `BETWEEN`, `IS NULL`. Combine filters with `AND` and `OR`, and group them with parentheses.
+
+```sql
+level = 'error' AND message ILIKE '%timeout%'
+level IN ('error', 'warn') AND NOT message LIKE '%healthz%'
+```
+
+Two names work on every table:
+
+| Name | Stands for |
+| --- | --- |
+| `level` | The severity column of the table |
+| `message` | The body column of the table |
+
+Log attributes use dot notation. The first segment is an attribute group configured for your table, and the rest is the path inside it: `http.status_code = 500`. A value in quotes is a string, and a bare number is a number.
+
+## Time range
+
+Pick a preset such as **Last 15 minutes**, **Last 1 hour**, or **Last 1 day**, or set an absolute range. The volume histogram above the list shows lines per bucket. Drag across the histogram to zoom into that range.
+
+## Filters
+
+The **Filters** panel lists facets with counts. **Level** is always there. The other groups are the resource attributes configured for your table, such as the service name. Click a value to add it to the query.
+
+## Log details
+
+Click a line to open its details. Every field of the line is listed, including nested attributes.
+
+- **Replace query** replaces the search with `field = 'value'`.
+- **Add to query (AND)** appends the condition.
+- **Exclude from query (AND)** appends `field != 'value'`.
+- The column button adds the field to the table. Column choices are remembered per organization in your browser.
+- **View trace** opens the trace that the line belongs to, when the line carries a `trace_id`.
+
+## Before data arrives
+
+An empty Logs page shows the three setup steps: the OTLP logs endpoint, the bearer token in the `Authorization` header, and the `env` resource attribute that routes traffic into this source. **View Collector Setup** opens the credentials page. A line appears within about a minute of being sent.
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Traces" icon="diagram-project" href="/explore/traces">
+    Open the trace behind a line and read the waterfall.
+  </Card>
+
+  <Card title="OpenTelemetry SDKs and collectors" icon="arrow-right-arrow-left" href="/send-data/otlp">
+    How log lines reach Sherlock.
+  </Card>
+</CardGroup>

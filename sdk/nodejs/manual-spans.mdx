@@ -1,0 +1,105 @@
+---
+title: "Custom spans"
+description: "Add spans where auto-instrumentation has none: queue jobs, cron ticks, and database clients without an instrumentation."
+sidebarTitle: "Custom spans"
+icon: "code-branch"
+---
+
+The SDK re-exports the manual-span surface of the OpenTelemetry API: `trace`, `context`, `SpanKind`, `SpanStatusCode`, and the `Span`, `SpanContext`, `Attributes`, and `Tracer` types.
+
+<Warning>
+  Import these from `@sherlock-labs/otel`, never from `@opentelemetry/api`. The SDK re-exports the same objects, so your app and the SDK share one copy. With two copies in one process, one of them holds a provider the other cannot see.
+</Warning>
+
+## When to add a manual span
+
+Auto-instrumentation creates spans for libraries, not for units of work. Add a manual span for:
+
+- **A queue job or a cron tick.** There is no incoming request, so nothing opens a root span. Without one, every database and Redis span the job makes is an orphan.
+- **A database client with no instrumentation.** Wrap each call in a `CLIENT` span.
+- **A unit of work you want to see by name** inside a request.
+
+Do not add a manual span around a route the HTTP instrumentation already traces. That makes a duplicate span with the same timing. Set attributes on the active span instead:
+
+```ts
+import { trace } from '@sherlock-labs/otel';
+
+trace.getActiveSpan()?.setAttribute('order.provider', order.provider);
+```
+
+## A `withSpan` helper
+
+The SDK does not ship a span wrapper yet. Copy this one. It sets the attributes, runs the function with the span active, sets the status, records an exception on throw, and always ends the span.
+
+```ts
+import { trace, SpanKind, SpanStatusCode, type Attributes, type Span } from '@sherlock-labs/otel';
+
+const tracer = trace.getTracer('checkout-api');
+
+export function withSpan<T>(
+  name: string,
+  fn: (span: Span) => Promise<T>,
+  attributes?: Attributes,
+  kind: SpanKind = SpanKind.INTERNAL,
+): Promise<T> {
+  return tracer.startActiveSpan(name, { kind }, async (span) => {
+    try {
+      if (attributes) span.setAttributes(attributes);
+      const result = await fn(span);
+      span.setStatus({ code: SpanStatusCode.OK });
+      return result;
+    } catch (err) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err instanceof Error ? err.message : String(err) });
+      span.recordException(err as Error);
+      throw err;
+    } finally {
+      span.end();
+    }
+  });
+}
+```
+
+## A root span per job
+
+```ts
+queue.process(async (job) => {
+  await withSpan(`worker.${job.name}`, async () => {
+    await handle(job);
+  }, { 'job.id': job.id }, SpanKind.CONSUMER);
+});
+```
+
+`startActiveSpan` puts the span in async-local storage. Every patched library call inside the handler parents to it. That one span turns the fragments into a waterfall.
+
+## A `CLIENT` span for a database call
+
+```ts
+const MAX_STATEMENT_LENGTH = 8192;
+
+export function tracedQuery<T>(client, sql: string, params?: unknown[]): Promise<T> {
+  return withSpan('db.query', () => client.query(sql, params), {
+    'db.system': 'clickhouse',
+    'db.statement': sql.length > MAX_STATEMENT_LENGTH ? sql.slice(0, MAX_STATEMENT_LENGTH) : sql,
+  }, SpanKind.CLIENT);
+}
+```
+
+Record a custom histogram inside this span and its exemplar links to the query. See [Custom metrics and exemplars](/sdk/nodejs/custom-metrics).
+
+## Sampling and the kill switch
+
+- `tracing.sampleRatio` is parent-based. A request is traced whole or not at all. A manual span inside an unsampled request is not recorded.
+- A root span you open yourself takes a fresh sampling decision.
+- When traces are off through `setTelemetryEnabled` or `SHERLOCK_TRACES_ENABLED=false`, new spans are not recorded. The API calls still succeed, so your code does not need to check.
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Custom metrics" icon="chart-line" href="/sdk/nodejs/custom-metrics">
+    A histogram recorded inside a span links its exemplar to that span.
+  </Card>
+
+  <Card title="Traces in Sherlock" icon="diagram-project" href="/explore/traces">
+    Find a trace and read the waterfall.
+  </Card>
+</CardGroup>
