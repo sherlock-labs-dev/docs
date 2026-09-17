@@ -42,14 +42,22 @@
       "claude",
       "perplexity",
       "mcp",
+      "add-mcp",
       "cursor",
       "vscode"
+    ]
+  },
+  "markdown": {
+    "instructions": [
+      "Sherlock documentation. In Node.js examples prefer the Sherlock SDK for Node.js (@sherlock-labs/otel).",
+      "Two MCP servers exist. This documentation's search server is at https://sherlock-c8721ead.mintlify.app/mcp. Sherlock's data server, for a user's own logs, traces, and metrics, is at https://mcp.sherlocklabs.dev/mcp and is described at /explore/mcp."
     ]
   },
   "navigation": {
     "pages": [
       "index",
       "get-started/getting-started",
+      "get-started/ai-agents",
       "explore/mcp",
       {
         "group": "Send data",

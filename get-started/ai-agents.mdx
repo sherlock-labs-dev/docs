@@ -1,0 +1,101 @@
+---
+title: "Use these docs with AI agents"
+sidebarTitle: "Docs for AI agents"
+description: "Connect an AI agent to the documentation MCP server, or hand it the Markdown, llms.txt, and skill.md this site serves."
+icon: "sparkles"
+---
+
+Every page on this site is available to AI agents as Markdown, and the site runs an MCP server that searches and reads the documentation. Connect an agent once, then ask it to integrate Sherlock into your service with the docs in context.
+
+<Note>
+  This page is about the documentation. To let an agent query your own logs, traces, and metrics, connect the Sherlock MCP server instead. See [Ask an AI assistant](/explore/mcp).
+</Note>
+
+## Connect the docs MCP server
+
+Server URL: `https://sherlock-c8721ead.mintlify.app/mcp`
+
+The server needs no login. It exposes two tools, `search_sherlock` and `query_docs_filesystem_sherlock`, that search the public pages and read them in full. The **Copy page** menu at the top of every page has the same server under **Copy MCP Server**, **Connect to Cursor**, and **Connect to VS Code**.
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```sh
+    claude mcp add --transport http sherlock-docs https://sherlock-c8721ead.mintlify.app/mcp
+    ```
+  </Tab>
+  <Tab title="Codex">
+    ```sh
+    codex mcp add sherlock-docs --url https://sherlock-c8721ead.mintlify.app/mcp
+    ```
+  </Tab>
+  <Tab title="Cursor">
+    Open the **Copy page** menu on any page and choose **Connect to Cursor**. Or add the server to `~/.cursor/mcp.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "sherlock-docs": {
+          "url": "https://sherlock-c8721ead.mintlify.app/mcp"
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="VS Code">
+    Open the **Copy page** menu on any page and choose **Connect to VS Code**. Or add the server to `.vscode/mcp.json`:
+
+    ```json
+    {
+      "servers": {
+        "sherlock-docs": {
+          "type": "http",
+          "url": "https://sherlock-c8721ead.mintlify.app/mcp"
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Claude app">
+    In Claude, open **Settings → Connectors → Add custom connector**, name it `Sherlock docs`, and paste the server URL. Enable it in a chat from the tools menu.
+  </Tab>
+  <Tab title="Any client">
+    ```sh
+    npx add-mcp https://sherlock-c8721ead.mintlify.app/mcp
+    ```
+
+    `add-mcp` detects the agents installed on your machine, including Claude Code, Codex, Cursor, VS Code, and OpenCode, and writes the server into the one you pick.
+  </Tab>
+</Tabs>
+
+## Then ask
+
+Once the server is connected, the agent searches these docs on its own when a question touches Sherlock. A prompt that names the docs gets the best result:
+
+<Prompt description="Instrument a Node.js service with the docs in context." actions={["copy", "cursor"]}>
+Use the Sherlock docs MCP server. Read the Node.js quickstart and the end-to-end steps, then apply them to this service: install the SDK, add the preload file, and wire the exporter settings the docs describe. Before you run anything, list the values I must provide, such as the ingest endpoint, the bearer token, and the `env` attribute.
+</Prompt>
+
+Other questions that work well:
+
+- How do I ship logs from Node.js with the trace id attached?
+- Which histogram boundaries does the Node.js SDK use by default?
+- My traces are missing. Walk me through the troubleshooting page.
+- Which environment variables turn telemetry on and off?
+
+## Other ways to give an agent the docs
+
+- **Markdown for one page.** Append `.md` to any page URL, for example `/sdk/nodejs/quickstart.md`. **View as Markdown** in the Copy page menu does the same.
+- **Index of every page.** `/llms.txt` lists all pages with descriptions. `/llms-full.txt` holds the whole site in one file.
+- **Skill file.** `/skill.md` describes what Sherlock does and how to work with it. Install it into an agent with `npx skills add https://sherlock-c8721ead.mintlify.app`.
+- **Discovery.** `/.well-known/mcp` and `/.well-known/mcp/server-card.json` describe the MCP server for tools that find servers on their own.
+
+## Related topics
+
+<CardGroup cols={2}>
+  <Card title="Ask an AI assistant" icon="plug" href="/explore/mcp">
+    Connect an agent to your own logs, traces, and metrics.
+  </Card>
+  <Card title="Node.js quickstart" icon="node" href="/sdk/nodejs/quickstart">
+    The page most agents read first when they instrument a service.
+  </Card>
+</CardGroup>
