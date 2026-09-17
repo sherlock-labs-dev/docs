@@ -15,3 +15,6 @@ html.dark #navigation-items a:not([aria-current="page"]):hover,
 [data-theme="dark"] #navigation-items a:not([aria-current="page"]):hover {
   background-color: #1c1c1c;
 }
+
+/* Group labels as written in docs.json ("Node.js SDK", not "Node.Js SDK"). */
+#navigation-items .sidebar-group-header { text-transform: none; }
