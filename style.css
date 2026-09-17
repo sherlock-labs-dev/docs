@@ -1,0 +1,17 @@
+/* Sidebar selection, matching the app's sidebar (shadcn tokens: sidebar-accent). */
+#navigation-items a[aria-current="page"] {
+  background-color: #f2f2f2;
+  border-radius: 0.5rem;
+}
+#navigation-items a:not([aria-current="page"]):hover {
+  background-color: #f7f7f7;
+  border-radius: 0.5rem;
+}
+html.dark #navigation-items a[aria-current="page"],
+[data-theme="dark"] #navigation-items a[aria-current="page"] {
+  background-color: #2a2a2a;
+}
+html.dark #navigation-items a:not([aria-current="page"]):hover,
+[data-theme="dark"] #navigation-items a:not([aria-current="page"]):hover {
+  background-color: #1c1c1c;
+}
