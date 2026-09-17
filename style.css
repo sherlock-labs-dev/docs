@@ -18,3 +18,27 @@ html.dark #navigation-items a:not([aria-current="page"]):hover,
 
 /* Group labels as written in docs.json ("Node.js SDK", not "Node.Js SDK"). */
 #navigation-items .sidebar-group-header { text-transform: none; }
+
+/* Header search: a wide, centered bar with placeholder and shortcut on desktop.
+   The luma theme collapses it to an icon until the navbar is 1500px wide. */
+@media (min-width: 1024px) {
+  #navbar div:has(> .topbar-right-container) { position: relative; }
+  #navbar .topbar-right-container > div:has(> #search-bar-entry) {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    flex: 0 0 auto !important;
+  }
+  #navbar #search-bar-entry {
+    width: 20rem !important;
+    height: 2.25rem;
+    padding: 0 0.75rem 0 0.875rem !important;
+    justify-content: space-between !important;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  }
+  html.dark #navbar #search-bar-entry,
+  [data-theme="dark"] #navbar #search-bar-entry { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
+  #navbar #search-bar-entry .truncate { display: block !important; }
+  #navbar #search-bar-entry > span { display: inline-flex !important; }
+}
