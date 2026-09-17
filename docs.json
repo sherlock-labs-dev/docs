@@ -21,7 +21,7 @@
     "light": "/logo/light.png",
     "dark": "/logo/dark.png"
   },
-  "favicon": "/favicon.png",
+  "favicon": "/favicon.ico",
   "navbar": {
     "primary": {
       "type": "button",
