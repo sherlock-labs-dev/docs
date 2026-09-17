@@ -9,21 +9,11 @@
   },
   "favicon": "/favicon.png",
   "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
     "tabs": [
       {
         "tab": "Docs",
         "icon": "book",
         "pages": [
-          "index",
           "index",
           "get-started/getting-started",
           "explore/mcp",
