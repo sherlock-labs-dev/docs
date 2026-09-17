@@ -47,44 +47,38 @@
     ]
   },
   "navigation": {
-    "tabs": [
+    "pages": [
+      "index",
+      "get-started/getting-started",
+      "explore/mcp",
       {
-        "tab": "Docs",
-        "icon": "book",
+        "group": "Send data",
+        "icon": "paper-plane",
         "pages": [
-          "index",
-          "get-started/getting-started",
-          "explore/mcp",
-          {
-            "group": "Send data",
-            "icon": "paper-plane",
-            "pages": [
-              "send-data/overview",
-              "send-data/otlp"
-            ]
-          },
-          {
-            "group": "Node.js SDK",
-            "icon": {
-              "style": "brands",
-              "name": "node-js"
-            },
-            "pages": [
-              "sdk/nodejs/overview",
-              "sdk/nodejs/quickstart",
-              "sdk/nodejs/add-telemetry",
-              "sdk/nodejs/custom-metrics",
-              "sdk/nodejs/manual-spans",
-              "sdk/nodejs/troubleshooting"
-            ]
-          },
-          "explore/logs",
-          "explore/traces",
-          "explore/metrics",
-          "explore/exemplars",
-          "explore/alerts"
+          "send-data/overview",
+          "send-data/otlp"
         ]
-      }
+      },
+      {
+        "group": "Node.js SDK",
+        "icon": {
+          "style": "brands",
+          "name": "node-js"
+        },
+        "pages": [
+          "sdk/nodejs/overview",
+          "sdk/nodejs/quickstart",
+          "sdk/nodejs/add-telemetry",
+          "sdk/nodejs/custom-metrics",
+          "sdk/nodejs/manual-spans",
+          "sdk/nodejs/troubleshooting"
+        ]
+      },
+      "explore/logs",
+      "explore/traces",
+      "explore/metrics",
+      "explore/exemplars",
+      "explore/alerts"
     ]
   }
 }
