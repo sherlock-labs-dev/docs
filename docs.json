@@ -2,12 +2,50 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "luma",
   "name": "Sherlock",
+  "description": "Sherlock documentation: send logs, traces, and metrics from your services and follow a spike from a chart to a trace to the logs.",
   "colors": {
-    "primary": "#1F5A8A",
-    "light": "#5FA8E6",
-    "dark": "#0B3A5C"
+    "primary": "#262626",
+    "light": "#E5E5E5",
+    "dark": "#171717"
+  },
+  "fonts": {
+    "family": "Geist"
+  },
+  "background": {
+    "color": {
+      "light": "#FFFFFF",
+      "dark": "#0A0A0A"
+    }
+  },
+  "logo": {
+    "light": "/logo/light.png",
+    "dark": "/logo/dark.png"
   },
   "favicon": "/favicon.png",
+  "navbar": {
+    "primary": {
+      "type": "button",
+      "label": "Open Sherlock",
+      "href": "https://sherlocklabs.dev"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/sherlock-labs-dev"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
+  },
   "navigation": {
     "tabs": [
       {
@@ -48,34 +86,5 @@
         ]
       }
     ]
-  },
-  "logo": {
-    "light": "/logo/light.png",
-    "dark": "/logo/dark.png"
-  },
-  "navbar": {
-    "primary": {
-      "type": "button",
-      "label": "Open Sherlock",
-      "href": "https://sherlocklabs.dev"
-    }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/sherlock-labs-dev"
-    }
-  },
-  "description": "Sherlock documentation: send logs, traces, and metrics from your services and follow a spike from a chart to a trace to the logs."
+  }
 }
