@@ -92,6 +92,18 @@ claude mcp add sherlock -t http "https://mcp.sherlocklabs.dev/mcp" --header "x-a
 
 Generate a token with **Generate MCP token** on **Settings → MCP**. Sherlock inserts it into the command on that page. Copy it right away. You cannot see it again. You can also use an existing token from the **API Tokens** page.
 
+## Ask about these docs
+
+This documentation site has its own MCP server. Point a client at it and ask questions over the docs themselves, for example "How do I ship logs from Node.js?" or "Which environment variables start telemetry?". It searches the public pages and answers from them.
+
+Server URL: `https://sherlock-c8721ead.mintlify.app/mcp`
+
+```sh
+claude mcp add sherlock-docs -t http "https://sherlock-c8721ead.mintlify.app/mcp"
+```
+
+The **Copy page** menu at the top of every page offers the same server, plus links that open the page in Claude, ChatGPT, Cursor, and VS Code. Use the Sherlock MCP server above for your data, and this one for the documentation.
+
 ## Related topics
 
 <CardGroup cols={2}>
